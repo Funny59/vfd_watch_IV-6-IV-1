@@ -2,12 +2,17 @@
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/interrupt.h>
+#include "i2c.h"
 #define ClearBit(reg, bit)       reg &= (~(1<<(bit)))
 #define SetBit(reg, bit)         reg |= (1<<(bit))  
+#define RTC_adr_write 0b11010000
+#define RTC_adr_read  0b11010001
 
-uint16_t displayData = 1257;
-unsigned long long millis = 0;
-unsigned long long t_dot = 0;
+uint16_t displayData = 0;
+uint64_t millis = 0, t_dot = 0, t_time = 0;
+unsigned char hour, min, sec,
+    day, wday, month, year;
+   // temp, t1, t2;
 
 ISR(TIMER0_COMPA_vect)
 {
@@ -196,8 +201,28 @@ void updateDisplay(){
     SetBit(PORTD, PORTD7);
 }
 
-// инициализация начальных установок
-void RTC_init(void){
+unsigned char bcd (unsigned char data){
+	unsigned char bc;
+	bc=((((data&(1<<6))|(data&(1<<5))|(data&(1<<4)))*0x0A)>>4)+((data&(1<<3))|(data&(1<<2))|(data&(1<<1))|(data&0x01));
+	return bc;
+}
+
+unsigned char bin(unsigned char dec){
+	char bcd;
+	char n, dig, num, count;
+	num = dec;
+	count = 0;
+	bcd = 0;
+	for (n=0; n<4; n++) {
+		dig = num%10;
+		num = num/10;
+		bcd = (dig<<count)|bcd;
+		count += 4;
+	}
+	return bcd;
+}
+
+void initI2C(void){
  
     i2c_start_cond();               // запуск i2c
     i2c_send_byte(RTC_adr_write);   // передача адреса устройства, режим записи
@@ -208,9 +233,58 @@ void RTC_init(void){
  
 }
 
+void RTC_read_time(void){
+    i2c_start_cond();               // запуск i2c
+    i2c_send_byte(RTC_adr_write);   // передача адреса устройства, режим записи
+    i2c_send_byte(0x00);            // передача адреса памяти 
+    i2c_stop_cond();                // остановка i2c
+    i2c_start_cond();               // запуск i2c
+    i2c_send_byte(RTC_adr_read);    // передача адреса устройства, режим чтения
+    sec = bcd(i2c_get_byte(0));     // чтение секунд, ACK
+    min = bcd(i2c_get_byte(0));     // чтение минут, ACK
+    hour = bcd(i2c_get_byte(0));    // чтение часов, ACK
+    wday = bcd(i2c_get_byte(0));    // чтение день недели, ACK
+    day = bcd(i2c_get_byte(0));     // чтение число, ACK
+    month = bcd(i2c_get_byte(0));   // чтение месяц, ACK
+    year = bcd(i2c_get_byte(1));    // чтение год, NACK
+    i2c_stop_cond();                // остановка i2c
+}
+
+void RTC_write_time(unsigned char hour1,unsigned char min1, unsigned char sec1){
+    i2c_start_cond();               // запуск i2c
+    i2c_send_byte(RTC_adr_write);   // передача адреса устройства, режим записи
+    i2c_send_byte(0x00);            // передача адреса памяти 
+    i2c_send_byte(bin(sec1));       // 0x00 секунды (целесообразно ли задавать еще и секунды?)
+    i2c_send_byte(bin(min1));       // 0x01 минуты
+    i2c_send_byte(bin(hour1));      // 0x02 часы
+    i2c_stop_cond();                // остановка i2c
+}
+
+void RTC_write_date(unsigned char wday, unsigned char day, unsigned char month, unsigned char year){
+    i2c_start_cond();               // запуск i2c
+    i2c_send_byte(RTC_adr_write);   // передача адреса устройства, режим записи
+    i2c_send_byte(0x03);        // передача адреса памяти 
+    i2c_send_byte(bin(wday));       // 0x03 день недели (воскресенье - 1, пн 2, вт 3, ср 4, чт 5, пт 6, сб 7)
+    i2c_send_byte(bin(day));        // 0x04 день месяц
+    i2c_send_byte(bin(month));      // 0x05 месяц
+    i2c_send_byte(bin(year));       // 0x06 год
+    i2c_stop_cond();                // остановка i2c
+}
+
+void updateTime(){
+    //displayData = millis/1000;
+    if(millis - t_time > 1000){
+        RTC_read_time();
+        displayData = 100*hour + min;
+        t_time = millis;
+    }
+}
+
 int main(void)
 {
     initDisplay();
+    initI2C();
+    RTC_read_time();
     TIMSK0 |= (1<<OCIE0A);
     OCR0A = 125;
     TCCR0B = (1<<CS01)|(1<<CS00);
@@ -218,8 +292,7 @@ int main(void)
     while (1) 
     {
         updateDisplay();
-        displayData = millis/1000;
-
+        updateTime();
     }
 }
 
