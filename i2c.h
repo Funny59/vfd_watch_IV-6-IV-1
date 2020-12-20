@@ -4,7 +4,7 @@
 #define I2C_PIN		PINC	// Тут указать порт, например PINB или PINC
 #define I2C_DDR		DDRC	// Тут указать порт, например DDRB или DDRC
 // все задержки при работе шины i2c, изменяйте это число только если знаете, что делаете!!!
-#define I2C_DELAY	_delay_us(10);	 // по умолчанию задержки 10 микросекунд
+#define I2C_DELAY	_delay_us(5);	 // по умолчанию задержки 10 микросекунд
 #include <util/delay.h>
 
 volatile unsigned char i2c_frame_error=0; // если > 0, значит произошла фрейм-ошибка (после STOP-команды, линии SDA и SCL не перешли в состояние HIGH, не подтянулись к + питания)

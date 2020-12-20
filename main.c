@@ -8,14 +8,14 @@
 #define RTC_adr_write 0b11010000
 #define RTC_adr_read  0b11010001
 
+uint8_t buttonCurrentState = 0, longPush = 0, shortPush = 0;
 uint16_t displayData = 0;
-uint64_t millis = 0, t_dot = 0, t_time = 0;
-unsigned char hour, min, sec,
-    day, wday, month, year;
-   // temp, t1, t2;
+uint64_t millis = 0;
+uint32_t t_dot = 0, t_time = 0, t_but = 0, t_push = 0, t_temp = 0;
+unsigned char hour, min, sec;
+   // day, wday, month, year;
 
-ISR(TIMER0_COMPA_vect)
-{
+ISR(TIMER0_COMPA_vect){
     millis++;
     TCNT0 = 0;
 }
@@ -142,6 +142,24 @@ void updateDigit(int n){
             ClearBit(PORTB, PORTB7); //F
             ClearBit(PORTD, PORTD6); //H
             break;
+        case 10:
+            SetBit(PORTC, PORTC0); //A
+            SetBit(PORTC, PORTC1); //B
+            ClearBit(PORTC, PORTC2); //C
+            ClearBit(PORTC, PORTC3); //D
+            ClearBit(PORTB, PORTB6); //E
+            ClearBit(PORTB, PORTB7); //F
+            SetBit(PORTD, PORTD6); //H
+            break;
+        case 11:
+            ClearBit(PORTC, PORTC0); //A
+            ClearBit(PORTC, PORTC1); //B
+            ClearBit(PORTC, PORTC2); //C
+            SetBit(PORTC, PORTC3); //D
+            ClearBit(PORTB, PORTB6); //E
+            SetBit(PORTB, PORTB7); //F
+            SetBit(PORTD, PORTD6); //H
+            break;
         default:
             SetBit(PORTC, PORTC0); //A
             SetBit(PORTC, PORTC1); //B
@@ -155,18 +173,17 @@ void updateDigit(int n){
     }
 }
 
-void updateDisplay(){
-    const float t = 3;
+void updateDisplay(float t1, float t2){
     static int f = 0;
 
     updateDigit(displayData/1000%10);
     ClearBit(PORTB, PORTB5);
-    _delay_ms(t);
+    _delay_ms(t1);
     SetBit(PORTB, PORTB5);
 
     updateDigit(displayData/100%10);
     ClearBit(PORTB, PORTB4);
-    _delay_ms(t);
+    _delay_ms(t1);
     SetBit(PORTB, PORTB4);
 
     if(millis - t_dot > 1250){
@@ -180,24 +197,48 @@ void updateDisplay(){
     if(f){
         ClearBit(PORTD, PORTD5);
         ClearBit(PORTD, PORTD6);
-        _delay_ms(t/2.0);
+        _delay_ms((t1+t2)/4.0);
         SetBit(PORTB, PORTB7);
         SetBit(PORTD, PORTD5);
     } else {
         SetBit(PORTB, PORTB7);
         SetBit(PORTD, PORTD5);
-        _delay_ms(t/2.0);
+        _delay_ms((t1+t2)/4.0);
     }
 
 
     updateDigit(displayData/10%10);
     ClearBit(PORTB, PORTB0);
-    _delay_ms(t);
+    _delay_ms(t2);
     SetBit(PORTB, PORTB0);
 
     updateDigit(displayData%10);
     ClearBit(PORTD, PORTD7);
-    _delay_ms(t);
+    _delay_ms(t2);
+    SetBit(PORTD, PORTD7);
+}
+
+void updateDisplayTemp(int tmp){
+    static int f = 0;
+
+    updateDigit(tmp/10);
+    ClearBit(PORTB, PORTB5);
+    _delay_ms(3);
+    SetBit(PORTB, PORTB5);
+
+    updateDigit(tmp%10);
+    ClearBit(PORTB, PORTB4);
+    _delay_ms(3);
+    SetBit(PORTB, PORTB4);
+
+    updateDigit(10);
+    ClearBit(PORTB, PORTB0);
+    _delay_ms(3);
+    SetBit(PORTB, PORTB0);
+
+    updateDigit(11);
+    ClearBit(PORTD, PORTD7);
+    _delay_ms(3);
     SetBit(PORTD, PORTD7);
 }
 
@@ -242,11 +283,11 @@ void RTC_read_time(void){
     i2c_send_byte(RTC_adr_read);    // передача адреса устройства, режим чтения
     sec = bcd(i2c_get_byte(0));     // чтение секунд, ACK
     min = bcd(i2c_get_byte(0));     // чтение минут, ACK
-    hour = bcd(i2c_get_byte(0));    // чтение часов, ACK
-    wday = bcd(i2c_get_byte(0));    // чтение день недели, ACK
-    day = bcd(i2c_get_byte(0));     // чтение число, ACK
-    month = bcd(i2c_get_byte(0));   // чтение месяц, ACK
-    year = bcd(i2c_get_byte(1));    // чтение год, NACK
+    hour = bcd(i2c_get_byte(1));    // чтение часов, ACK
+    //wday = bcd(i2c_get_byte(0));    // чтение день недели, ACK
+    //day = bcd(i2c_get_byte(0));     // чтение число, ACK
+    //month = bcd(i2c_get_byte(0));   // чтение месяц, ACK
+    //year = bcd(i2c_get_byte(1));    // чтение год, NACK
     i2c_stop_cond();                // остановка i2c
 }
 
@@ -260,28 +301,66 @@ void RTC_write_time(unsigned char hour1,unsigned char min1, unsigned char sec1){
     i2c_stop_cond();                // остановка i2c
 }
 
-void RTC_write_date(unsigned char wday, unsigned char day, unsigned char month, unsigned char year){
+int RTC_read_temper(void){
     i2c_start_cond();               // запуск i2c
     i2c_send_byte(RTC_adr_write);   // передача адреса устройства, режим записи
-    i2c_send_byte(0x03);        // передача адреса памяти 
-    i2c_send_byte(bin(wday));       // 0x03 день недели (воскресенье - 1, пн 2, вт 3, ср 4, чт 5, пт 6, сб 7)
-    i2c_send_byte(bin(day));        // 0x04 день месяц
-    i2c_send_byte(bin(month));      // 0x05 месяц
-    i2c_send_byte(bin(year));       // 0x06 год
+    i2c_send_byte(0x11);            // передача адреса памяти 
     i2c_stop_cond();                // остановка i2c
+    i2c_start_cond();               // запуск i2c
+    i2c_send_byte(RTC_adr_read);    // передача адреса устройства, режим чтения
+    uint8_t t1 = i2c_get_byte(0);           // чтение MSB температуры
+    uint8_t t2 = i2c_get_byte(1);           // чтение LSB температуры
+    i2c_stop_cond();                // остановка i2c
+    t2=(t2/128);                    // сдвигаем на 6 - точность 0,25 (2 бита)
+                                    // сдвигаем на 7 - точность 0,5 (1 бит)
+    t2=t2*5;
+    if(t2 > 0.5) return t1 + 1;
+    return t1;
 }
 
 void updateTime(){
     //displayData = millis/1000;
-    if(millis - t_time > 1000){
+    if(millis - t_time > 350){
         RTC_read_time();
         displayData = 100*hour + min;
         t_time = millis;
     }
 }
 
-int main(void)
-{
+void updateButton(){
+    if(millis - t_but > 5){
+        if(!(longPush||shortPush)){
+            if(!buttonCurrentState && (PIND&(1<<PIND3))){
+                buttonCurrentState = 1;
+                t_push = millis;
+            }
+            if(buttonCurrentState && !(PIND&(1<<PIND3))){
+                buttonCurrentState = 0;\
+                if(millis - t_push > 2500) longPush = 1; else 
+                if(millis - t_push > 50) shortPush = 1;
+            }
+        }
+        t_but = millis;
+    }
+}
+
+uint8_t getShortPush(){
+    if(shortPush){
+        shortPush = 0;
+        longPush = 0;
+        return 1;
+    } else return 0;
+}
+
+uint8_t getLongPush(){
+    if(longPush){
+        shortPush = 0;
+        longPush = 0;
+        return 1;
+    } else return 0;
+}
+
+int main(void){
     initDisplay();
     initI2C();
     RTC_read_time();
@@ -289,10 +368,35 @@ int main(void)
     OCR0A = 125;
     TCCR0B = (1<<CS01)|(1<<CS00);
     sei();
-    while (1) 
-    {
-        updateDisplay();
+    while(1){
+        updateDisplay(3, 3);
         updateTime();
+        updateButton();
+        if(getShortPush()){
+            t_temp = millis;
+            while(millis - t_temp < 10000) updateDisplayTemp(RTC_read_temper()-8);
+        }
+        if(getLongPush()){
+            while (!getLongPush()){
+                updateDisplay(3, 0.5);
+                updateButton();
+                displayData = 100*hour + min;
+                if(getShortPush()) {
+                    hour++;
+                    hour %= 24;
+                    RTC_write_time(hour, min, 0);
+                }
+            }
+            while (!getLongPush()){
+                updateDisplay(0.5, 3);
+                updateButton();
+                displayData = 100*hour + min;
+                if(getShortPush()) {
+                    min++;
+                    min %= 60;
+                    RTC_write_time(hour, min, 0);
+                }
+            }
+        }
     }
 }
-
