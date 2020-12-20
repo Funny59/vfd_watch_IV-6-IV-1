@@ -3,6 +3,6 @@ Firmware for watch based on Atmega88P(168P, 328P) where used IV-6 and IV-1 tubes
 
 Прошивка написана на от*№@сь. 
 
-TODO:\n
-Добавть подсветку.\n
-Сделать код читаемым\n
+TODO:
+Добавть подсветку
+Сделать код читаемым
