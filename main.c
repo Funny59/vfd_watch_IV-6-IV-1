@@ -198,14 +198,13 @@ void updateDisplay(float t1, float t2){
         ClearBit(PORTD, PORTD5);
         ClearBit(PORTD, PORTD6);
         _delay_ms((t1+t2)/4.0);
-        SetBit(PORTB, PORTB7);
         SetBit(PORTD, PORTD5);
+        SetBit(PORTD, PORTD6);
     } else {
-        SetBit(PORTB, PORTB7);
         SetBit(PORTD, PORTD5);
+        SetBit(PORTD, PORTD6);
         _delay_ms((t1+t2)/4.0);
     }
-
 
     updateDigit(displayData/10%10);
     ClearBit(PORTB, PORTB0);
@@ -219,8 +218,6 @@ void updateDisplay(float t1, float t2){
 }
 
 void updateDisplayTemp(int tmp){
-    static int f = 0;
-
     updateDigit(tmp/10);
     ClearBit(PORTB, PORTB5);
     _delay_ms(3);
@@ -374,7 +371,7 @@ int main(void){
         updateButton();
         if(getShortPush()){
             t_temp = millis;
-            while(millis - t_temp < 10000) updateDisplayTemp(RTC_read_temper()-8);
+            while(millis - t_temp < 10000) updateDisplayTemp(RTC_read_temper()-7);
         }
         if(getLongPush()){
             while (!getLongPush()){
